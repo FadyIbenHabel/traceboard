@@ -1,0 +1,5 @@
+# Copy to .dev.vars for local Cloudflare/Vinext development.
+# This file contains placeholders only. Never commit a real API key.
+# Leave GROQ_API_KEY empty to use demo mode or a key entered in the app.
+GROQ_API_KEY=""
+GROQ_MODEL="openai/gpt-oss-20b"

@@ -1,0 +1,33 @@
+name: Verify Traceboard
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Check TypeScript
+        run: npm run typecheck
+      - name: Run offline contract tests
+        run: npm test
+      - name: Build Worker and client
+        run: npm run build
+      - name: Install browser for smoke checks
+        run: npx playwright install --with-deps chromium
+      - name: Check desktop and mobile flows
+        run: npm run test:e2e
