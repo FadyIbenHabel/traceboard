@@ -48,3 +48,15 @@ A useful next experiment is a fixed labeled incident set comparing lexical retri
 ## Provider selection
 
 The default is `openai/gpt-oss-20b` on Groq. Model IDs and free quotas are provider-controlled; consult [Groq's current model list](https://console.groq.com/docs/models) and account limits. JSON response mode constrains syntax, while application validation enforces the domain contract. Changing the model should include a manual run of the same incident set and comparison of citations, useful checks, latency, and token usage.
+
+## Public repository footprint
+
+The application has no database, connector integration, or server-side record
+store. Unused starter components, database examples, and connector scaffolding
+were removed. Only the framework's optional Sites build integration remains;
+`npm ci` and local development do not require a Sites or Cloudflare account.
+
+Input limits are shared between request handling and restored briefs in
+`lib/traceboard/limits.ts`. Browser history uses `useSyncExternalStore` with a
+stable server snapshot, cached validated client snapshots, and storage events
+for cross-tab updates. Provider keys are never part of that store.

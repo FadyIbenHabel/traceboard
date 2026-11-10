@@ -14,11 +14,7 @@ function record(value: unknown): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
-function nonnegativeNumber(
-  value: unknown,
-  name: string,
-  integer = false,
-): number {
+function nonnegativeNumber(value: unknown, name: string, integer = false): number {
   if (
     typeof value !== "number" ||
     !Number.isFinite(value) ||
@@ -31,10 +27,7 @@ function nonnegativeNumber(
 }
 
 /** Validate a received/restored result without trusting client-stored metadata. */
-export function parseResult(
-  value: unknown,
-  input: AnalysisInput,
-): AnalysisResult {
+export function parseResult(value: unknown, input: AnalysisInput): AnalysisResult {
   const data = record(value);
   const cleanInput = validateInput(input);
   const evidence = retrieveEvidence(cleanInput);
@@ -60,18 +53,10 @@ export function parseResult(
     meta.provider !== cleanInput.mode
   )
     throw new AnalysisValidationError("Invalid brief provider.");
-  if (
-    typeof meta.model !== "string" ||
-    !meta.model.trim() ||
-    meta.model.length > 120
-  )
+  if (typeof meta.model !== "string" || !meta.model.trim() || meta.model.length > 120)
     throw new AnalysisValidationError("Invalid brief model.");
   const durationMs = nonnegativeNumber(meta.durationMs, "duration");
-  const retrievedChunks = nonnegativeNumber(
-    meta.retrievedChunks,
-    "evidence count",
-    true,
-  );
+  const retrievedChunks = nonnegativeNumber(meta.retrievedChunks, "evidence count", true);
   if (retrievedChunks !== evidence.length)
     throw new AnalysisValidationError(
       "Saved evidence does not match the report sources.",

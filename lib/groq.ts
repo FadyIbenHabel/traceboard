@@ -1,4 +1,5 @@
 import {
+  INPUT_LIMITS,
   type AnalysisInput,
   type AnalysisResult,
   buildMessages,
@@ -14,25 +15,14 @@ export const MODELS = [
   { id: "llama-3.3-70b-versatile", label: "Llama 3.3 70B · access varies" },
 ] as const;
 
-export const INPUT_LIMITS = {
-  bodyBytes: 128_000,
-  sources: 6,
-  sourceChars: 15_000,
-  totalSourceChars: 60_000,
-  descriptionChars: 8_000,
-} as const;
+export { INPUT_LIMITS };
 
 export class ApiError extends Error {
   readonly code: string;
   readonly status: number;
   readonly retryAfter?: number;
 
-  constructor(
-    code: string,
-    message: string,
-    status = 400,
-    retryAfter?: number,
-  ) {
+  constructor(code: string, message: string, status = 400, retryAfter?: number) {
     super(message);
     this.name = "ApiError";
     this.code = code;
@@ -43,10 +33,7 @@ export class ApiError extends Error {
 
 export function validateModel(value: unknown): string {
   const model = value === undefined ? DEFAULT_MODEL : value;
-  if (
-    typeof model !== "string" ||
-    !/^[a-zA-Z0-9][a-zA-Z0-9._/-]{0,99}$/.test(model)
-  ) {
+  if (typeof model !== "string" || !/^[a-zA-Z0-9][a-zA-Z0-9._/-]{0,99}$/.test(model)) {
     throw new ApiError(
       "INVALID_MODEL",
       "Choose a valid Groq model ID (up to 100 characters).",
@@ -60,11 +47,7 @@ function record(value: unknown): value is Record<string, unknown> {
 }
 
 function field(value: unknown, name: string, min: number, max: number): string {
-  if (
-    typeof value !== "string" ||
-    value.trim().length < min ||
-    value.length > max
-  ) {
+  if (typeof value !== "string" || value.trim().length < min || value.length > max) {
     throw new ApiError(
       "INVALID_INPUT",
       `${name} must contain ${min}–${max.toLocaleString("en-US")} characters.`,
@@ -85,7 +68,7 @@ export function validateRequest(value: unknown): {
   if (value.mode !== "demo" && value.mode !== "groq") {
     throw new ApiError("INVALID_MODE", "Choose demo or Groq analysis.");
   }
-  const title = field(value.title, "Report title", 3, 160);
+  const title = field(value.title, "Report title", 3, INPUT_LIMITS.titleChars);
   const description = field(
     value.description,
     "Bug description",
@@ -110,7 +93,7 @@ export function validateRequest(value: unknown): {
         "INVALID_INPUT",
         "Each source must include id, name and content.",
       );
-    const id = field(source.id, "Source ID", 1, 80);
+    const id = field(source.id, "Source ID", 1, INPUT_LIMITS.sourceIdChars);
     if (!/^[a-zA-Z0-9_-]+$/.test(id) || ids.has(id)) {
       throw new ApiError(
         "INVALID_INPUT",
@@ -118,13 +101,15 @@ export function validateRequest(value: unknown): {
       );
     }
     ids.add(id);
-    const name = field(source.name, "File name", 1, 160);
+    const name = field(source.name, "File name", 1, INPUT_LIMITS.sourceNameChars);
     const content = field(
       source.content,
       `Content of ${name}`,
       1,
       INPUT_LIMITS.sourceChars,
     );
+    if (content.includes("\0"))
+      throw new ApiError("INVALID_INPUT", "Only plain-text source files are supported.");
     total += content.length;
     return { id, name, content };
   });
@@ -137,10 +122,7 @@ export function validateRequest(value: unknown): {
   }
   let apiKey: string | undefined;
   if (value.apiKey !== undefined && value.apiKey !== "") {
-    if (
-      typeof value.apiKey !== "string" ||
-      !/^[\x21-\x7e]{16,256}$/.test(value.apiKey)
-    ) {
+    if (typeof value.apiKey !== "string" || !/^[\x21-\x7e]{16,256}$/.test(value.apiKey)) {
       throw new ApiError(
         "INVALID_API_KEY",
         "Enter a valid Groq API key without whitespace.",
@@ -191,10 +173,7 @@ export async function getDefaultModel(): Promise<string> {
 
 export async function readJsonBody(request: Request): Promise<unknown> {
   if (
-    !request.headers
-      .get("content-type")
-      ?.toLowerCase()
-      .startsWith("application/json")
+    !request.headers.get("content-type")?.toLowerCase().startsWith("application/json")
   ) {
     throw new ApiError(
       "INVALID_CONTENT_TYPE",
@@ -210,8 +189,7 @@ export async function readJsonBody(request: Request): Promise<unknown> {
       413,
     );
   }
-  if (!request.body)
-    throw new ApiError("INVALID_JSON", "The request body is empty.");
+  if (!request.body) throw new ApiError("INVALID_JSON", "The request body is empty.");
   const reader = request.body.getReader();
   const decoder = new TextDecoder();
   let size = 0;
@@ -263,9 +241,7 @@ function providerError(status: number, retryHeader: string | null): ApiError {
   if (status === 429) {
     const retry = Number(retryHeader);
     const retryAfter =
-      Number.isFinite(retry) && retry > 0
-        ? Math.min(Math.ceil(retry), 3600)
-        : undefined;
+      Number.isFinite(retry) && retry > 0 ? Math.min(Math.ceil(retry), 3600) : undefined;
     return new ApiError(
       "GROQ_RATE_LIMIT",
       "Groq's rate limit was reached. Wait before running another analysis, or choose a smaller model.",
@@ -313,10 +289,7 @@ export async function analyzeWithGroq(
   }
   const startedAt = Date.now();
   const controller = new AbortController();
-  const timeout = setTimeout(
-    () => controller.abort(),
-    options.timeoutMs ?? 45_000,
-  );
+  const timeout = setTimeout(() => controller.abort(), options.timeoutMs ?? 45_000);
   let response: Response;
   try {
     response = await (options.fetchImpl ?? fetch)(
@@ -333,9 +306,7 @@ export async function analyzeWithGroq(
           temperature: 0.1,
           max_completion_tokens: 2800,
           response_format: { type: "json_object" },
-          ...(model.startsWith("openai/gpt-oss-")
-            ? { reasoning_effort: "low" }
-            : {}),
+          ...(model.startsWith("openai/gpt-oss-") ? { reasoning_effort: "low" } : {}),
         }),
         signal: controller.signal,
       },
@@ -343,11 +314,7 @@ export async function analyzeWithGroq(
     if (!response.ok)
       throw providerError(response.status, response.headers.get("retry-after"));
     const data: unknown = await response.json();
-    if (
-      !record(data) ||
-      !Array.isArray(data.choices) ||
-      !record(data.choices[0])
-    ) {
+    if (!record(data) || !Array.isArray(data.choices) || !record(data.choices[0])) {
       throw new ApiError(
         "INVALID_PROVIDER_RESPONSE",
         "Groq returned an incomplete result. Please try again.",

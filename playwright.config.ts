@@ -3,6 +3,8 @@ import { defineConfig } from "@playwright/test";
 // The suite starts the local app, or reuses an existing development server.
 // Keep browser binaries outside the checkout when installing locally:
 // PLAYWRIGHT_BROWSERS_PATH=/tmp/traceboard-browsers npx playwright install chromium
+const production = Boolean(process.env.CI || process.env.TRACEBOARD_E2E_PRODUCTION);
+
 export default defineConfig({
   testDir: "./tests/e2e",
   outputDir: "./test-results",
@@ -13,7 +15,7 @@ export default defineConfig({
   expect: { timeout: 15_000 },
   reporter: "list",
   webServer: {
-    command: "npm run dev -- --port 5173",
+    command: production ? "npm start -- --port 5173" : "npm run dev -- --port 5173",
     url: "http://127.0.0.1:5173",
     reuseExistingServer: !process.env.CI,
     timeout: 60_000,

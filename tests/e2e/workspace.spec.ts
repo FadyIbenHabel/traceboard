@@ -5,8 +5,7 @@ import { readFile } from "node:fs/promises";
 async function runSample(page: Page) {
   const pending = page.waitForResponse(
     (response) =>
-      response.url().endsWith("/api/analyze") &&
-      response.request().method() === "POST",
+      response.url().endsWith("/api/analyze") && response.request().method() === "POST",
   );
   await page.getByRole("button", { name: /^Investigate issue/ }).click();
   expect((await pending).ok()).toBe(true);
@@ -14,9 +13,7 @@ async function runSample(page: Page) {
     page.getByRole("heading", { name: "Here’s where to look." }),
   ).toBeVisible();
   expect(await page.locator(".hypothesis").count()).toBeGreaterThan(0);
-  await expect(page.locator(".result-meta")).toContainText(
-    "Deterministic sample",
-  );
+  await expect(page.locator(".result-meta")).toContainText("Deterministic sample");
 }
 
 async function expectNoOverflow(page: Page) {
@@ -64,9 +61,7 @@ test("desktop: sample analysis, evidence, export, case switch, and session key",
   await page.locator(".citations button").first().click();
   const evidenceDialog = page.locator("dialog.evidence-dialog");
   await expect(evidenceDialog).toBeVisible();
-  expect(await evidenceDialog.locator(".highlighted").count()).toBeGreaterThan(
-    0,
-  );
+  expect(await evidenceDialog.locator(".highlighted").count()).toBeGreaterThan(0);
   await page.getByRole("button", { name: "Close source evidence" }).click();
   await expect(evidenceDialog).not.toBeVisible();
 
@@ -86,10 +81,7 @@ test("desktop: sample analysis, evidence, export, case switch, and session key",
   expect(await page.locator("#report-title").inputValue()).not.toBe(firstTitle);
   await runSample(page);
 
-  await page
-    .getByRole("button", { name: "Model settings", exact: true })
-    .first()
-    .click();
+  await page.getByRole("button", { name: "Model settings", exact: true }).first().click();
   const transientKey = `gsk_${randomUUID().replaceAll("-", "")}`;
   await page.locator("#api-key").fill(transientKey);
   await page.getByRole("button", { name: "Use Groq", exact: true }).click();
@@ -99,10 +91,7 @@ test("desktop: sample analysis, evidence, export, case switch, and session key",
   );
   expect(keyWasPersisted).toBe(false);
   await page.reload();
-  await page
-    .getByRole("button", { name: "Model settings", exact: true })
-    .first()
-    .click();
+  await page.getByRole("button", { name: "Model settings", exact: true }).first().click();
   await expect(page.locator("#api-key")).toHaveValue("");
   await page.getByRole("button", { name: "Close model settings" }).click();
   expect(errors).toEqual([]);
@@ -122,16 +111,50 @@ test("mobile: 390px workspace and sample result fit without horizontal overflow"
   await page.screenshot({ path: testInfo.outputPath("mobile.png") });
   await runSample(page);
   await expectNoOverflow(page);
-  await page
-    .getByRole("button", { name: "Open navigation", exact: true })
-    .click();
+  await page.getByRole("button", { name: "Open navigation", exact: true }).click();
   await expect(page.locator(".sidebar")).toHaveClass(/is-open/);
-  await page
-    .getByRole("button", { name: "Case library", exact: false })
-    .click();
+  await page.getByRole("button", { name: "Case library", exact: false }).click();
   await expect(
     page.getByRole("heading", { name: "A few good mysteries." }),
   ).toBeVisible();
   await expectNoOverflow(page);
   expect(errors).toEqual([]);
+});
+
+test("saved history persists, synchronizes across tabs, and can be cleared", async ({
+  page,
+  context,
+}) => {
+  await openWorkspace(page);
+  await runSample(page);
+  await expect(page.locator(".recent-item")).toHaveCount(1);
+  const second = await context.newPage();
+  await openWorkspace(second);
+  await expect(second.locator(".recent-item")).toHaveCount(1);
+  await second.locator(".recent-item").click();
+  await expect(second.locator(".result-body")).toBeVisible();
+  await page
+    .getByRole("button", { name: "Clear saved briefs on this device", exact: true })
+    .click();
+  await expect(page.locator(".recent-item")).toHaveCount(0);
+  await expect(second.locator(".recent-item")).toHaveCount(0);
+  await second.close();
+});
+
+test("editing a sample clears stale output and cannot produce an unrelated canned brief", async ({
+  page,
+}) => {
+  await openWorkspace(page);
+  await runSample(page);
+  await page
+    .getByLabel("What’s going wrong?", { exact: true })
+    .fill("A custom incident requiring live analysis");
+  await expect(page.locator(".result-body")).toHaveCount(0);
+  const pending = page.waitForResponse((response) =>
+    response.url().endsWith("/api/analyze"),
+  );
+  await page.getByRole("button", { name: /^Investigate issue/ }).click();
+  expect((await pending).status()).toBe(400);
+  await expect(page.getByRole("alert")).toContainText("Demo mode supports");
+  await expect(page.locator(".result-body")).toHaveCount(0);
 });

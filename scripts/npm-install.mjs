@@ -26,7 +26,9 @@ export class NpmCacheProgress {
     try {
       const value = new URL(registry);
       if (["http:", "https:"].includes(value.protocol)) this.registry = value;
-    } catch {}
+    } catch {
+      /* An unavailable registry leaves cache accounting unknown. */
+    }
   }
 
   accept(line) {
@@ -49,8 +51,7 @@ export class NpmCacheProgress {
   }
 
   counts(lock) {
-    if (this.invalid || lock?.lockfileVersion !== 3 || !lock.packages)
-      return {};
+    if (this.invalid || lock?.lockfileVersion !== 3 || !lock.packages) return {};
     const urls = new Set(
       Object.values(lock.packages)
         .map((pkg) => pkg?.resolved)
@@ -70,25 +71,17 @@ export class NpmCacheProgress {
             ...new Set([
               url,
               new URL(locked.pathname, this.registry).href,
-              this.registry.href.replace(/\/$/, "") +
-                locked.pathname +
-                locked.search,
+              this.registry.href.replace(/\/$/, "") + locked.pathname + locked.search,
             ]),
           ];
         }
       }
-      const matches = candidates.filter((candidate) =>
-        this.entries.has(candidate),
-      );
-      if (
-        !matches.length ||
-        matches.some((candidate) => observed.has(candidate))
-      )
+      const matches = candidates.filter((candidate) => this.entries.has(candidate));
+      if (!matches.length || matches.some((candidate) => observed.has(candidate)))
         return {};
       for (const candidate of matches) observed.add(candidate);
       // A corrupt direct-cache hit followed by a mirror fetch is a download.
-      if (matches.some((candidate) => this.entries.get(candidate)))
-        downloaded++;
+      if (matches.some((candidate) => this.entries.get(candidate))) downloaded++;
     }
     return {
       packages_reused: urls.size - downloaded,
@@ -114,7 +107,9 @@ export async function runNpmInstall(command, cacheSeed = "not_applicable") {
     if (descriptor !== undefined) {
       try {
         closeSync(descriptor);
-      } catch {}
+      } catch {
+        /* The optional report descriptor may already be closed. */
+      }
     }
     descriptor = undefined;
   }
@@ -137,7 +132,9 @@ export async function runNpmInstall(command, cacheSeed = "not_applicable") {
         },
       );
       if (configured.status === 0) registry = configured.stdout.trim();
-    } catch {}
+    } catch {
+      /* Registry discovery is optional; installation proceeds without cache accounting. */
+    }
   }
   const progress = new NpmCacheProgress(registry);
   let receivedSignal;
@@ -175,8 +172,7 @@ export async function runNpmInstall(command, cacheSeed = "not_applicable") {
     lines.close();
     if (startError) process.stderr.write("Unable to start npm.\n");
   } finally {
-    for (const [signal, handler] of handlers)
-      process.removeListener(signal, handler);
+    for (const [signal, handler] of handlers) process.removeListener(signal, handler);
     result.signal ??= receivedSignal;
     try {
       let counts = {};
@@ -185,7 +181,9 @@ export async function runNpmInstall(command, cacheSeed = "not_applicable") {
           counts = progress.counts(
             JSON.parse(readFileSync("node_modules/.package-lock.json", "utf8")),
           );
-        } catch {}
+        } catch {
+          /* An unavailable npm cache report leaves counts unknown. */
+        }
       }
       if (descriptor !== undefined) {
         ftruncateSync(descriptor, 0);
@@ -194,9 +192,7 @@ export async function runNpmInstall(command, cacheSeed = "not_applicable") {
           `${JSON.stringify({
             version: 1,
             cache_seed:
-              result.code === 0 && !result.signal
-                ? cacheSeed
-                : "decision_unavailable",
+              result.code === 0 && !result.signal ? cacheSeed : "decision_unavailable",
             ...counts,
           })}\n`,
         );
@@ -207,25 +203,26 @@ export async function runNpmInstall(command, cacheSeed = "not_applicable") {
       if (descriptor !== undefined) {
         try {
           closeSync(descriptor);
-        } catch {}
+        } catch {
+          /* Reporting cleanup must not alter the install exit status. */
+        }
       }
     }
   }
   return result;
 }
 
-if (
-  process.argv[1] &&
-  path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)
-) {
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const [cacheSeed, ...command] = process.argv.slice(2);
   const result = await runNpmInstall(command, cacheSeed);
   process.exitCode = result.signal
     ? 128 + (osConstants.signals[result.signal] ?? 0)
-    : result.code ?? 1;
+    : (result.code ?? 1);
   if (result.signal) {
     try {
       process.kill(process.pid, result.signal);
-    } catch {}
+    } catch {
+      /* Retain the install exit code if signal forwarding fails. */
+    }
   }
 }

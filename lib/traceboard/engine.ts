@@ -1,3 +1,4 @@
+import { INPUT_LIMITS } from "./limits.ts";
 import { SAMPLE_CASES } from "./samples.ts";
 import { retrieveEvidence } from "./retrieval.ts";
 import { AnalysisValidationError, DemoInputError } from "./types.ts";
@@ -19,32 +20,24 @@ function record(value: unknown, name: string): JsonRecord {
 }
 
 function string(value: unknown, name: string, max = 3000, min = 1): string {
-  if (
-    typeof value !== "string" ||
-    value.trim().length < min ||
-    value.length > max
-  )
-    throw new AnalysisValidationError(
-      `${name} must contain ${min}–${max} characters.`,
-    );
+  if (typeof value !== "string" || value.trim().length < min || value.length > max)
+    throw new AnalysisValidationError(`${name} must contain ${min}–${max} characters.`);
   return value;
 }
 
 function strings(value: unknown, name: string, min = 0, max = 8): string[] {
   if (!Array.isArray(value) || value.length < min || value.length > max)
-    throw new AnalysisValidationError(
-      `${name} must contain ${min}–${max} items.`,
-    );
+    throw new AnalysisValidationError(`${name} must contain ${min}–${max} items.`);
   return value.map((item, index) => string(item, `${name}[${index}]`, 1600));
 }
 
 export function validateInput(value: unknown): AnalysisInput {
   const data = record(value, "Report");
-  const title = string(data.title, "Title", 160, 3).trim();
+  const title = string(data.title, "Title", INPUT_LIMITS.titleChars, 3).trim();
   const description = string(
     data.description,
     "Description",
-    20_000,
+    INPUT_LIMITS.descriptionChars,
     10,
   ).trim();
   if (data.mode !== "demo" && data.mode !== "groq")
@@ -52,34 +45,34 @@ export function validateInput(value: unknown): AnalysisInput {
   if (
     !Array.isArray(data.sources) ||
     data.sources.length < 1 ||
-    data.sources.length > 12
+    data.sources.length > INPUT_LIMITS.sources
   )
-    throw new AnalysisValidationError("Attach 1–12 source files.");
+    throw new AnalysisValidationError("Attach 1–6 source files.");
   const ids = new Set<string>();
   let total = 0;
   const sources: SourceFile[] = data.sources.map((item, index) => {
     const source = record(item, `Source ${index + 1}`);
-    const id = string(source.id, "Source ID", 80);
-    if (!/^[a-zA-Z0-9_.-]+$/.test(id) || ids.has(id))
+    const id = string(source.id, "Source ID", INPUT_LIMITS.sourceIdChars);
+    if (!/^[a-zA-Z0-9_-]+$/.test(id) || ids.has(id))
       throw new AnalysisValidationError(
-        "Source IDs must be unique and contain only letters, numbers, dots, underscores or hyphens.",
+        "Source IDs must be unique and contain only letters, numbers, underscores or hyphens.",
       );
     ids.add(id);
-    const name = string(source.name, "File name", 180);
-    const content = string(source.content, "File content", 100_000);
+    const name = string(source.name, "File name", INPUT_LIMITS.sourceNameChars);
+    const content = string(source.content, "File content", INPUT_LIMITS.sourceChars);
     if (content.includes("\0"))
-      throw new AnalysisValidationError(
-        "Only text source files are supported.",
-      );
+      throw new AnalysisValidationError("Only text source files are supported.");
     total += content.length;
     return { id, name, content };
   });
-  if (total > 300_000)
+  if (total > INPUT_LIMITS.totalSourceChars)
     throw new AnalysisValidationError(
-      "Total source content must be at most 300,000 characters.",
+      "Total source content must be at most 60,000 characters.",
     );
   const model =
-    data.model === undefined ? undefined : string(data.model, "Model", 120);
+    data.model === undefined
+      ? undefined
+      : string(data.model, "Model", INPUT_LIMITS.modelChars);
   return {
     title,
     description,
@@ -133,9 +126,7 @@ function validateCitation(
     throw new AnalysisValidationError("Citation line range is invalid.");
   const source = input.sources.find((item) => item.id === sourceId);
   if (!source)
-    throw new AnalysisValidationError(
-      "The model cited a source that was not provided.",
-    );
+    throw new AnalysisValidationError("The model cited a source that was not provided.");
   const visible = evidence.some(
     (chunk) =>
       chunk.sourceId === sourceId &&
@@ -148,13 +139,9 @@ function validateCitation(
     );
   const lines = source.content.replace(/\r\n/g, "\n").split("\n");
   if ((endLine as number) > lines.length)
-    throw new AnalysisValidationError(
-      "The model cited lines outside the source file.",
-    );
+    throw new AnalysisValidationError("The model cited lines outside the source file.");
   const quote = string(data.quote, "Citation quote", 15_000);
-  const actual = lines
-    .slice((startLine as number) - 1, endLine as number)
-    .join("\n");
+  const actual = lines.slice((startLine as number) - 1, endLine as number).join("\n");
   if (quote.replace(/\r\n/g, "\n").trim() !== actual.trim())
     throw new AnalysisValidationError(
       "A model citation does not match the original source lines.",
@@ -174,15 +161,11 @@ export function parseAnalysis(
   input: AnalysisInput,
 ): AnalysisResult {
   if (typeof text !== "string" || text.length > 100_000)
-    throw new AnalysisValidationError(
-      "The model response is empty or too large.",
-    );
+    throw new AnalysisValidationError("The model response is empty or too large.");
   let parsed: unknown;
   try {
     // A fenced JSON object is tolerated, but prose and partial objects are not.
-    const clean = text
-      .trim()
-      .replace(/^```(?:json)?\s*\n?([\s\S]*?)\n?```$/i, "$1");
+    const clean = text.trim().replace(/^```(?:json)?\s*\n?([\s\S]*?)\n?```$/i, "$1");
     parsed = JSON.parse(clean);
   } catch {
     throw new AnalysisValidationError(
@@ -199,9 +182,7 @@ export function parseAnalysis(
     severity !== "medium" &&
     severity !== "low"
   )
-    throw new AnalysisValidationError(
-      "The model returned an invalid severity.",
-    );
+    throw new AnalysisValidationError("The model returned an invalid severity.");
   if (
     !Array.isArray(data.hypotheses) ||
     data.hypotheses.length < 1 ||
@@ -212,34 +193,21 @@ export function parseAnalysis(
   const hypotheses: Hypothesis[] = data.hypotheses.map((value) => {
     const hypothesis = record(value, "Hypothesis");
     const id = string(hypothesis.id, "Hypothesis ID", 80);
-    if (ids.has(id))
-      throw new AnalysisValidationError("Hypothesis IDs must be unique.");
+    if (ids.has(id)) throw new AnalysisValidationError("Hypothesis IDs must be unique.");
     ids.add(id);
     const confidence = hypothesis.confidence;
-    if (
-      confidence !== "high" &&
-      confidence !== "medium" &&
-      confidence !== "low"
-    )
-      throw new AnalysisValidationError(
-        "The model returned an invalid confidence.",
-      );
+    if (confidence !== "high" && confidence !== "medium" && confidence !== "low")
+      throw new AnalysisValidationError("The model returned an invalid confidence.");
     if (
       !Array.isArray(hypothesis.citations) ||
       hypothesis.citations.length < 1 ||
       hypothesis.citations.length > 8
     )
-      throw new AnalysisValidationError(
-        "Each hypothesis needs 1–8 source citations.",
-      );
+      throw new AnalysisValidationError("Each hypothesis needs 1–8 source citations.");
     return {
       id,
       title: string(hypothesis.title, "Hypothesis title", 300),
-      explanation: string(
-        hypothesis.explanation,
-        "Hypothesis explanation",
-        6000,
-      ),
+      explanation: string(hypothesis.explanation, "Hypothesis explanation", 6000),
       confidence,
       citations: hypothesis.citations.map((citation) =>
         validateCitation(citation, evidence, input),

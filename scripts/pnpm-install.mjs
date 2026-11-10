@@ -17,7 +17,13 @@ import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 
 const MAX_PACKAGES = 100_000;
-const CACHE_SEEDS = new Set(["seed_used", "seed_unavailable", "seed_lockfile_mismatch", "decision_unavailable", "not_applicable"]);
+const CACHE_SEEDS = new Set([
+  "seed_used",
+  "seed_unavailable",
+  "seed_lockfile_mismatch",
+  "decision_unavailable",
+  "not_applicable",
+]);
 const STORE_STATES = new Set(["created", "seeded", "reused", "unavailable"]);
 // The caller may use operational status only for
 // initial-setup fallback; an established project always retains pnpm. Broad
@@ -49,14 +55,31 @@ export class InstallProgress {
   }
 
   accept(event) {
-    if (event?.name === "pnpm:stats" && event.prefix === this.project &&
-        Number.isSafeInteger(event.added) && event.added >= 0) this.added = event.added;
-    if (event?.name === "pnpm:stage" && event.stage === "importing_done" &&
-        event.prefix === this.project) this.complete = true;
-    if (event?.name !== "pnpm:progress" || event.requester !== this.project ||
-        !["fetched", "found_in_store"].includes(event.status)) return;
-    if (typeof event.packageId !== "string" || !event.packageId || event.packageId.length > 4096 ||
-        this.reused.size + this.downloaded.size >= MAX_PACKAGES) {
+    if (
+      event?.name === "pnpm:stats" &&
+      event.prefix === this.project &&
+      Number.isSafeInteger(event.added) &&
+      event.added >= 0
+    )
+      this.added = event.added;
+    if (
+      event?.name === "pnpm:stage" &&
+      event.stage === "importing_done" &&
+      event.prefix === this.project
+    )
+      this.complete = true;
+    if (
+      event?.name !== "pnpm:progress" ||
+      event.requester !== this.project ||
+      !["fetched", "found_in_store"].includes(event.status)
+    )
+      return;
+    if (
+      typeof event.packageId !== "string" ||
+      !event.packageId ||
+      event.packageId.length > 4096 ||
+      this.reused.size + this.downloaded.size >= MAX_PACKAGES
+    ) {
       this.invalid = true;
       return;
     }
@@ -69,9 +92,18 @@ export class InstallProgress {
   }
 
   counts(success) {
-    if (!success || !this.complete || !(this.added > 0) || this.invalid ||
-        this.reused.size + this.downloaded.size === 0) return {};
-    return { packages_reused: this.reused.size, packages_downloaded: this.downloaded.size };
+    if (
+      !success ||
+      !this.complete ||
+      !(this.added > 0) ||
+      this.invalid ||
+      this.reused.size + this.downloaded.size === 0
+    )
+      return {};
+    return {
+      packages_reused: this.reused.size,
+      packages_downloaded: this.downloaded.size,
+    };
   }
 }
 
@@ -80,9 +112,14 @@ function openReport() {
   if (!report || !constants.O_NOFOLLOW) return undefined;
   let fd;
   try {
-    fd = openSync(report, constants.O_WRONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+    fd = openSync(
+      report,
+      constants.O_WRONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
+    );
     if (fstatSync(fd).isFile()) return fd;
-  } catch {}
+  } catch {
+    /* Optional reporting must not block package installation. */
+  }
   if (fd !== undefined) closeSync(fd);
   return undefined;
 }
@@ -108,13 +145,16 @@ function showLine(line, progress, failure) {
   }
   progress.accept(event);
   if (event?.level === "error" && failure.code !== 65) {
-    failure.code = event.name === "pnpm" && OPERATIONAL_FAILURE_CODES.has(event.err?.code)
-      ? 70 : 65;
+    failure.code =
+      event.name === "pnpm" && OPERATIONAL_FAILURE_CODES.has(event.err?.code) ? 70 : 65;
   }
   const message = event?.message ?? event?.err?.message;
   if (event?.name === "pnpm:lifecycle" && typeof event.line === "string") {
     process.stdout.write(`${event.line}\n`);
-  } else if (typeof message === "string" && ["warn", "error", "info"].includes(event.level)) {
+  } else if (
+    typeof message === "string" &&
+    ["warn", "error", "info"].includes(event.level)
+  ) {
     const output = event.level === "error" ? process.stderr : process.stdout;
     output.write(`${message}\n`);
   }
@@ -123,10 +163,17 @@ function showLine(line, progress, failure) {
 async function openLock(filename, waitSeconds) {
   let fd;
   try {
-    if (!filename || !constants.O_NOFOLLOW || !constants.O_NONBLOCK) throw new Error("Unsupported lock");
-    fd = openSync(filename, constants.O_CREAT | constants.O_RDWR | constants.O_NOFOLLOW | constants.O_NONBLOCK, 0o600);
+    if (!filename || !constants.O_NOFOLLOW || !constants.O_NONBLOCK)
+      throw new Error("Unsupported lock");
+    fd = openSync(
+      filename,
+      constants.O_CREAT | constants.O_RDWR | constants.O_NOFOLLOW | constants.O_NONBLOCK,
+      0o600,
+    );
     if (!fstatSync(fd).isFile()) throw new Error("Expected a regular lock file");
-    const child = spawn("flock", ["-w", waitSeconds, "3"], { stdio: ["ignore", "ignore", "ignore", fd] });
+    const child = spawn("flock", ["-w", waitSeconds, "3"], {
+      stdio: ["ignore", "ignore", "ignore", fd],
+    });
     const code = await new Promise((resolve) => {
       child.once("error", () => resolve(undefined));
       child.once("close", resolve);
@@ -175,9 +222,20 @@ async function main() {
   }
   if (argsIn[0] === "--report-store") {
     const [, cacheSeed, storeScope, storeState, stdout] = argsIn;
-    if (!CACHE_SEEDS.has(cacheSeed) || !["project", "workspace", "unknown"].includes(storeScope) ||
-        !STORE_STATES.has(storeState)) { process.exitCode = 64; return; }
-    const report = { version: 1, cache_seed: cacheSeed, store_scope: storeScope, store_state: storeState };
+    if (
+      !CACHE_SEEDS.has(cacheSeed) ||
+      !["project", "workspace", "unknown"].includes(storeScope) ||
+      !STORE_STATES.has(storeState)
+    ) {
+      process.exitCode = 64;
+      return;
+    }
+    const report = {
+      version: 1,
+      cache_seed: cacheSeed,
+      store_scope: storeScope,
+      store_state: storeState,
+    };
     const fd = openReport();
     writeReport(fd, report);
     if (fd !== undefined) closeSync(fd);
@@ -185,25 +243,48 @@ async function main() {
     return;
   }
   const [cacheSeed, storeScope, storeState, store, executable, ...prefix] = argsIn;
-  if (!CACHE_SEEDS.has(cacheSeed) || !["project", "workspace"].includes(storeScope) ||
-      !STORE_STATES.has(storeState) || storeState === "unavailable" ||
-      !store || !path.isAbsolute(store) || !executable) {
+  if (
+    !CACHE_SEEDS.has(cacheSeed) ||
+    !["project", "workspace"].includes(storeScope) ||
+    !STORE_STATES.has(storeState) ||
+    storeState === "unavailable" ||
+    !store ||
+    !path.isAbsolute(store) ||
+    !executable
+  ) {
     process.stderr.write("Invalid pnpm installation arguments.\n");
     process.exitCode = 64;
     return;
   }
   const fd = openReport();
-  const report = { version: 1, cache_seed: cacheSeed, store_scope: storeScope, store_state: storeState };
+  const report = {
+    version: 1,
+    cache_seed: cacheSeed,
+    store_scope: storeScope,
+    store_state: storeState,
+  };
   writeReport(fd, report);
   const progress = new InstallProgress(process.cwd());
   const failure = {};
   const env = { ...process.env };
   delete env.SITES_INSTALL_REPORT_PATH;
-  const args = [...prefix, "install", "--prod=false", "--ignore-scripts=false",
-    "--frozen-lockfile", "--prefer-offline", "--store-dir", store,
-    "--cache-dir", path.join(store, "policy-cache"), "--fetch-retries=0",
-    "--fetch-timeout=30000", "--network-concurrency=1", "--reporter=ndjson",
-    "--package-import-method=auto"];
+  const args = [
+    ...prefix,
+    "install",
+    "--prod=false",
+    "--ignore-scripts=false",
+    "--frozen-lockfile",
+    "--prefer-offline",
+    "--store-dir",
+    store,
+    "--cache-dir",
+    path.join(store, "policy-cache"),
+    "--fetch-retries=0",
+    "--fetch-timeout=30000",
+    "--network-concurrency=1",
+    "--reporter=ndjson",
+    "--package-import-method=auto",
+  ];
   let result = { code: 1, signal: null };
   let receivedSignal;
   try {
@@ -212,16 +293,26 @@ async function main() {
     lines.on("line", (line) => showLine(line, progress, failure));
     // timeout/exec owns the inherited group. Relaying would deliver signals twice.
     const signalHandlers = ["SIGINT", "SIGHUP", "SIGTERM"].map((signal) => {
-      const handler = () => { receivedSignal ??= signal; };
+      const handler = () => {
+        receivedSignal ??= signal;
+      };
       process.on(signal, handler);
       return [signal, handler];
     });
     let spawnError;
-    child.once("error", (error) => { spawnError = error; });
-    result = await new Promise((resolve) => child.once("close", (code, signal) => {
-      resolve({ code: spawnError ? (spawnError.code === "ENOENT" ? 127 : 1) : code, signal });
-    }));
-    for (const [signal, handler] of signalHandlers) process.removeListener(signal, handler);
+    child.once("error", (error) => {
+      spawnError = error;
+    });
+    result = await new Promise((resolve) =>
+      child.once("close", (code, signal) => {
+        resolve({
+          code: spawnError ? (spawnError.code === "ENOENT" ? 127 : 1) : code,
+          signal,
+        });
+      }),
+    );
+    for (const [signal, handler] of signalHandlers)
+      process.removeListener(signal, handler);
     lines.close();
     result.signal ??= receivedSignal;
     if (spawnError) {
@@ -233,15 +324,24 @@ async function main() {
     if (result.code === 0 && !result.signal) {
       accessSync("node_modules/.bin/vinext", constants.X_OK);
       const lock = readFileSync("pnpm-lock.yaml");
-      writeFileSync("node_modules/.sites-install.json", `${JSON.stringify({
-        package_manager: "pnpm@11.25.0",
-        lockfile_sha256: createHash("sha256").update(lock).digest("hex"),
-        node: process.version,
-        platform: `${process.platform}-${process.arch}`,
-      }, null, 2)}\n`);
+      writeFileSync(
+        "node_modules/.sites-install.json",
+        `${JSON.stringify(
+          {
+            package_manager: "pnpm@11.25.0",
+            lockfile_sha256: createHash("sha256").update(lock).digest("hex"),
+            node: process.version,
+            platform: `${process.platform}-${process.arch}`,
+          },
+          null,
+          2,
+        )}\n`,
+      );
     }
   } catch {
-    process.stderr.write("Dependency setup did not produce a usable Vinext installation.\n");
+    process.stderr.write(
+      "Dependency setup did not produce a usable Vinext installation.\n",
+    );
     result = { code: 65, signal: receivedSignal ?? null };
   } finally {
     Object.assign(report, progress.counts(result.code === 0 && !result.signal));
@@ -249,13 +349,23 @@ async function main() {
     if (fd !== undefined) closeSync(fd);
   }
   if (report.packages_reused !== undefined) {
-    process.stdout.write(`[sites] pnpm reused ${report.packages_reused} packages and downloaded ${report.packages_downloaded}\n`);
+    process.stdout.write(
+      `[sites] pnpm reused ${report.packages_reused} packages and downloaded ${report.packages_downloaded}\n`,
+    );
   }
-  if (result.code === 0 && !result.signal) process.stdout.write("[sites] dependency setup passed\n");
-  process.exitCode = result.signal ? 128 + (osConstants.signals[result.signal] ?? 0) : result.code ?? 1;
+  if (result.code === 0 && !result.signal)
+    process.stdout.write("[sites] dependency setup passed\n");
+  process.exitCode = result.signal
+    ? 128 + (osConstants.signals[result.signal] ?? 0)
+    : (result.code ?? 1);
   if (result.signal) {
-    try { process.kill(process.pid, result.signal); } catch {}
+    try {
+      process.kill(process.pid, result.signal);
+    } catch {
+      /* Retain the install exit code if signal forwarding fails. */
+    }
   }
 }
 
-if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) await main();
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url))
+  await main();

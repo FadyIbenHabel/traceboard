@@ -1,0 +1,35 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      react:
+        patterns:
+          - react
+          - react-dom
+          - react-server-dom-webpack
+          - "@types/react*"
+      framework:
+        patterns:
+          - next
+          - vinext
+          - vite
+          - "@vitejs/*"
+      lint-tooling:
+        patterns:
+          - eslint
+          - "@eslint/*"
+          - typescript-eslint
+          - eslint-plugin-react-hooks
+          - globals
+      cloudflare:
+        patterns:
+          - "@cloudflare/*"
+          - wrangler
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly

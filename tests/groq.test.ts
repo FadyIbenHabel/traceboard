@@ -78,8 +78,7 @@ test("request validation rejects duplicate source IDs, oversized source files an
     rejectedWith("INVALID_MODE"),
   );
   assert.throws(
-    () =>
-      validateRequest({ ...request, apiKey: "gsk_secret\nInjected: value" }),
+    () => validateRequest({ ...request, apiKey: "gsk_secret\nInjected: value" }),
     rejectedWith("INVALID_API_KEY"),
   );
 });
@@ -120,9 +119,7 @@ test("bounded JSON reader rejects an oversized stream even without Content-Lengt
 
 test("JSON reader rejects bad content type and malformed JSON", async () => {
   await assert.rejects(
-    readJsonBody(
-      new Request("https://example.test", { method: "POST", body: "{}" }),
-    ),
+    readJsonBody(new Request("https://example.test", { method: "POST", body: "{}" })),
     rejectedWith("INVALID_CONTENT_TYPE"),
   );
   await assert.rejects(

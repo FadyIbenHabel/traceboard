@@ -1,51 +1,109 @@
-# Dependencies
-/node_modules/
-/.pnp
+# Dependencies and package-manager caches. Commit package-lock.json.
+node_modules/
 .pnp.*
-# Keep authored Yarn tooling if the project adopts Yarn.
-/.yarn/*
-!/.yarn/patches/
-!/.yarn/plugins/
-!/.yarn/releases/
-!/.yarn/versions/
+.pnp
+.npm/
+.pnpm-store/
+.yarn/
 
-# Generated builds and framework state
+# Builds and framework caches (rooted so source folders are unaffected).
 /dist/
+/build/
+/out/
 /.next/
 /.vinext/
-/out/
+/.turbo/
+/.cache/
 next-env.d.ts
 *.tsbuildinfo
 
-# Test output
+# Tests, coverage, browser downloads, traces, and generated reports.
 /coverage/
+/test-results/
+/playwright-report/
+/playwright/.cache/
+/blob-report/
+/.nyc_output/
 
-# Package-manager logs
+# Environment files: only the two reviewed, empty templates are public.
+.env*
+.dev.vars*
+!/.env.example
+!/.dev.vars.example
+
+# Credentials and private keys. Never keep real credentials in source files.
+.aws/
+.ssh/
+.secrets/
+/secrets/
+credentials.json
+service-account*.json
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+id_rsa*
+id_ed25519*
+.netrc
+.npmrc
+.npmrc.local
+
+# Local Cloudflare state, deployment accounts, and agent workspaces.
+.wrangler/
+.sites-runtime/
+/.agents/
+/.codex/
+/.claude/
+/.vercel/
+/.netlify/
+/wrangler.local.*
+/outputs/
+/work/
+
+# Private inputs and local databases; uploaded content belongs outside Git.
+/local-data/
+/uploads/
+*.sqlite
+*.sqlite3
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+
+# Runtime logs and process files. Synthetic test fixtures may be committed.
+*.log
+*.log.*
+*.pid
+*.pid.lock
+*.seed
+!/tests/fixtures/**/*.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# Local environment and keys
-.env*
-.dev.vars*
-!.env.example
-!.dev.vars.example
-*.pem
+# Exported project/deployment archives, not the actual source or screenshots.
+*.zip
+*.rar
+*.7z
+*.tar
+*.tar.gz
+*.tgz
+*.gz
 
-# Checkout-local tool state
-/.wrangler/
-/.sites-runtime/
-
-# Workspace scaffolding and publication archives
-/.agents/
-/.codex/
-/outputs/
-/work/
-
-# OS metadata
+# Personal editor, operating-system, and scratch files.
+.idea/
+.vscode/
+*.code-workspace
+*.swp
+*.swo
+*~
+*.orig
+*.rej
 .DS_Store
-
-# Browser test artifacts
-/test-results/
-/playwright-report/
+._*
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/

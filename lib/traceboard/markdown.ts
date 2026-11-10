@@ -4,10 +4,7 @@ function inline(value: string): string {
   return value.replace(/\r?\n/g, " ").replace(/([\\`*_[\]<>])/g, "\\$1");
 }
 
-export function exportMarkdown(
-  result: AnalysisResult,
-  sources: SourceFile[],
-): string {
+export function exportMarkdown(result: AnalysisResult, sources: SourceFile[]): string {
   const lines = [
     `# ${inline(result.title)}`,
     "",

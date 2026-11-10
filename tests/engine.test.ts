@@ -52,14 +52,10 @@ test("all curated samples pass the same source validation as a live response", (
     assert.equal(result.meta.provider, "demo");
     assert.equal(result.meta.model, "Curated sample");
     assert.ok(result.hypotheses.length);
-    assert.ok(
-      result.hypotheses.every((hypothesis) => hypothesis.citations.length),
-    );
+    assert.ok(result.hypotheses.every((hypothesis) => hypothesis.citations.length));
     for (const hypothesis of result.hypotheses) {
       for (const citation of hypothesis.citations) {
-        const source = sample.sources.find(
-          (file) => file.id === citation.sourceId,
-        )!;
+        const source = sample.sources.find((file) => file.id === citation.sourceId)!;
         assert.equal(
           citation.quote,
           source.content
@@ -103,8 +99,7 @@ test("changed, renamed and removed source content cannot receive canned analysis
     );
   }
   assert.throws(
-    () =>
-      analyzeDemo({ ...input, mode: "demo", sources: input.sources.slice(1) }),
+    () => analyzeDemo({ ...input, mode: "demo", sources: input.sources.slice(1) }),
     DemoInputError,
   );
 });
@@ -114,23 +109,17 @@ test("BM25 retrieves the relevant range and retains original line numbers", () =
     { length: 90 },
     (_, i) => `ordinary informational entry ${i + 1}`,
   );
-  lines[63] =
-    "ERROR database connection pool exhausted checkout timeout waiting";
+  lines[63] = "ERROR database connection pool exhausted checkout timeout waiting";
   const longInput: AnalysisInput = {
     title: "Checkout pool timeout",
     description: "Database connection pool exhausted during checkout requests",
     mode: "groq",
-    sources: [
-      { id: "large-log", name: "service.log", content: lines.join("\n") },
-    ],
+    sources: [{ id: "large-log", name: "service.log", content: lines.join("\n") }],
   };
   const evidence = retrieveEvidence(longInput, 1);
   assert.equal(evidence.length, 1);
   assert.ok(evidence[0].startLine <= 64 && evidence[0].endLine >= 64);
-  assert.equal(
-    evidence[0].content.split("\n")[64 - evidence[0].startLine],
-    lines[63],
-  );
+  assert.equal(evidence[0].content.split("\n")[64 - evidence[0].startLine], lines[63]);
   assert.ok(evidence[0].score > 0);
 });
 
@@ -161,11 +150,7 @@ test("valid cited model output receives server-owned metadata", () => {
     id: "forged",
     meta: { provider: "demo", inputTokens: 0 },
   };
-  const result = parseAnalysis(
-    JSON.stringify(output),
-    retrieveEvidence(input),
-    input,
-  );
+  const result = parseAnalysis(JSON.stringify(output), retrieveEvidence(input), input);
   assert.equal(result.hypotheses[0].citations[0].sourceId, "checkout-route");
   assert.equal(result.meta.provider, "groq");
   assert.equal(result.meta.model, input.model);
@@ -186,22 +171,19 @@ test("unknown sources and out-of-range citations are rejected", () => {
   const unknown = modelOutput();
   unknown.hypotheses[0].citations[0].sourceId = "secret-file";
   assert.throws(
-    () =>
-      parseAnalysis(JSON.stringify(unknown), retrieveEvidence(input), input),
+    () => parseAnalysis(JSON.stringify(unknown), retrieveEvidence(input), input),
     /not provided/,
   );
   const outside = modelOutput();
   outside.hypotheses[0].citations[0].endLine = 999;
   assert.throws(
-    () =>
-      parseAnalysis(JSON.stringify(outside), retrieveEvidence(input), input),
+    () => parseAnalysis(JSON.stringify(outside), retrieveEvidence(input), input),
     /outside/,
   );
   const negative = modelOutput();
   negative.hypotheses[0].citations[0].startLine = -1;
   assert.throws(
-    () =>
-      parseAnalysis(JSON.stringify(negative), retrieveEvidence(input), input),
+    () => parseAnalysis(JSON.stringify(negative), retrieveEvidence(input), input),
     /invalid/,
   );
 });
@@ -327,10 +309,7 @@ test("input validation rejects duplicate source IDs, binary data and oversized r
       }),
     /File content/,
   );
-  assert.throws(
-    () => validateInput({ ...input, mode: "arbitrary" }),
-    /demo or groq/,
-  );
+  assert.throws(() => validateInput({ ...input, mode: "arbitrary" }), /demo or groq/);
 });
 
 test("Markdown exports identify demo mode and retain evidence and verification tasks", () => {

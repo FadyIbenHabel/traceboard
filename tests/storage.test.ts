@@ -37,13 +37,7 @@ test("missing nested result arrays are rejected per record", () => {
   const missingContext = brief();
   Reflect.deleteProperty(missingContext.result, "missingContext");
   assert.deepEqual(
-    readSavedBriefs([
-      missingChecks,
-      null,
-      missingCitations,
-      missingContext,
-      good,
-    ]),
+    readSavedBriefs([missingChecks, null, missingCitations, missingContext, good]),
     [good],
   );
 });
@@ -56,10 +50,7 @@ test("invalid source content and unmatched citation quotes cannot be restored", 
   noSources.input.sources = [];
   const forgedQuote = brief();
   forgedQuote.result.hypotheses[0].citations[0].quote = "invented code";
-  assert.deepEqual(
-    readSavedBriefs([wrongSource, noSources, forgedQuote, good]),
-    [good],
-  );
+  assert.deepEqual(readSavedBriefs([wrongSource, noSources, forgedQuote, good]), [good]);
 });
 
 test("invalid provider and numeric metadata fail closed", () => {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type DragEvent } from "react";
+import { useEffect, useEffectEvent, useRef, useState, type DragEvent } from "react";
 import {
   Activity,
   ArrowDown,
@@ -41,15 +41,12 @@ import {
   type AnalysisResult,
   type SourceFile,
 } from "@/lib/traceboard/index";
-import {
-  readSavedBriefs,
-  parseResult,
-  type SavedBrief,
-} from "@/lib/brief-storage";
+import { parseResult, type SavedBrief } from "@/lib/brief-storage";
+import { useBriefHistory, saveBrief, clearBriefs } from "@/lib/history-store";
+import Link from "next/link";
 
 type View = "workspace" | "library" | "about";
 type Citation = AnalysisResult["hypotheses"][number]["citations"][number];
-const HISTORY_KEY = "traceboard.briefs.v1";
 const DEFAULT_MODEL = "openai/gpt-oss-20b";
 const makeInput = (sample = SAMPLE_CASES[0]): AnalysisInput => ({
   title: sample.title,
@@ -73,7 +70,7 @@ export default function Home() {
   const [result, setResult] = useState<AnalysisResult | null>(null);
   const [resultSources, setResultSources] = useState<SourceFile[]>([]);
   const [sampleId, setSampleId] = useState(SAMPLE_CASES[0].id);
-  const [history, setHistory] = useState<SavedBrief[]>([]);
+  const history = useBriefHistory();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [toast, setToast] = useState("");
@@ -82,9 +79,9 @@ export default function Home() {
   const [apiKey, setApiKey] = useState("");
   const [model, setModel] = useState(DEFAULT_MODEL);
   const [configured, setConfigured] = useState(false);
-  const [configStatus, setConfigStatus] = useState<
-    "loading" | "ready" | "error"
-  >("loading");
+  const [configStatus, setConfigStatus] = useState<"loading" | "ready" | "error">(
+    "loading",
+  );
   const [mobileNav, setMobileNav] = useState(false);
   const [citation, setCitation] = useState<Citation | null>(null);
   const [dragging, setDragging] = useState(false);
@@ -92,21 +89,12 @@ export default function Home() {
   const settingsDialog = useRef<HTMLDialogElement>(null);
   const evidenceDialog = useRef<HTMLDialogElement>(null);
   const uploadRef = useRef<HTMLInputElement>(null);
-  const runRef = useRef<() => void>(() => {});
   const abortRef = useRef<AbortController | null>(null);
   const requestActive = useRef(false);
   const pendingFiles = useRef(false);
   const inputVersion = useRef(0);
 
   useEffect(() => {
-    try {
-      const saved: unknown = JSON.parse(
-        localStorage.getItem(HISTORY_KEY) || "[]",
-      );
-      setHistory(readSavedBriefs(saved));
-    } catch {
-      /* History is optional; a damaged browser record does not block analysis. */
-    }
     const controller = new AbortController();
     fetch("/api/config", { signal: controller.signal })
       .then((response) => {
@@ -145,21 +133,6 @@ export default function Home() {
     if (citation && dialog && !dialog.open) dialog.showModal();
     else if (!citation && dialog?.open) dialog.close();
   }, [citation]);
-  useEffect(() => {
-    const keydown = (event: KeyboardEvent) => {
-      if (
-        (event.metaKey || event.ctrlKey) &&
-        event.key === "Enter" &&
-        !settingsDialog.current?.open &&
-        !evidenceDialog.current?.open
-      ) {
-        event.preventDefault();
-        runRef.current();
-      }
-    };
-    document.addEventListener("keydown", keydown);
-    return () => document.removeEventListener("keydown", keydown);
-  }, []);
 
   const updateInput = (update: (previous: AnalysisInput) => AnalysisInput) => {
     inputVersion.current += 1;
@@ -198,20 +171,10 @@ export default function Home() {
     navigate("workspace");
   };
   const remember = (record: SavedBrief) => {
-    setHistory((previous) => {
-      const next = [
-        record,
-        ...previous.filter((item) => item.result.id !== record.result.id),
-      ].slice(0, 8);
-      try {
-        localStorage.setItem(HISTORY_KEY, JSON.stringify(next));
-      } catch {
-        setToast(
-          "Brief ready. Device storage is full, so this brief was not saved.",
-        );
-      }
-      return next;
-    });
+    if (!saveBrief(record))
+      setToast(
+        "Brief ready. Device storage is unavailable, so this brief was not saved.",
+      );
   };
   const runAnalysis = async () => {
     if (requestActive.current || view !== "workspace") return;
@@ -226,9 +189,7 @@ export default function Home() {
       return;
     }
     if (!input.sources.length) {
-      setError(
-        "Attach at least one log, code, or text file as supporting evidence.",
-      );
+      setError("Attach at least one log, code, or text file as supporting evidence.");
       return;
     }
     if (input.mode === "groq" && !apiKey && !configured) {
@@ -283,7 +244,24 @@ export default function Home() {
       abortRef.current = null;
     }
   };
-  runRef.current = runAnalysis;
+  const onShortcut = useEffectEvent(() => {
+    void runAnalysis();
+  });
+  useEffect(() => {
+    const keydown = (event: KeyboardEvent) => {
+      if (
+        (event.metaKey || event.ctrlKey) &&
+        event.key === "Enter" &&
+        !settingsDialog.current?.open &&
+        !evidenceDialog.current?.open
+      ) {
+        event.preventDefault();
+        onShortcut();
+      }
+    };
+    document.addEventListener("keydown", keydown);
+    return () => document.removeEventListener("keydown", keydown);
+  }, []);
 
   const addFiles = async (files: FileList | File[]) => {
     if (busy) return;
@@ -326,9 +304,7 @@ export default function Home() {
           0,
         ) > 60_000
       )
-        throw new Error(
-          "Keep all source files under 60,000 characters combined.",
-        );
+        throw new Error("Keep all source files under 60,000 characters combined.");
       if (version !== inputVersion.current) {
         setToast("Files skipped because the investigation changed.");
         return;
@@ -339,9 +315,7 @@ export default function Home() {
       }));
       setError("");
     } catch (cause) {
-      setError(
-        cause instanceof Error ? cause.message : "File could not be read.",
-      );
+      setError(cause instanceof Error ? cause.message : "File could not be read.");
     } finally {
       pendingFiles.current = false;
     }
@@ -355,9 +329,7 @@ export default function Home() {
   const copyBrief = async () => {
     if (!result) return;
     try {
-      await navigator.clipboard.writeText(
-        exportMarkdown(result, resultSources),
-      );
+      await navigator.clipboard.writeText(exportMarkdown(result, resultSources));
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
@@ -399,12 +371,12 @@ export default function Home() {
         />
       )}
       <aside className={`sidebar ${mobileNav ? "is-open" : ""}`}>
-        <a className="brand" href="/" aria-label="Traceboard home">
+        <Link className="brand" href="/" aria-label="Traceboard home">
           <TraceLogo />
           <span>
             traceboard<span className="brand-dot">.</span>
           </span>
-        </a>
+        </Link>
         <div className="workspace-switch">
           <span className="workspace-avatar">P</span>
           <div>
@@ -428,8 +400,7 @@ export default function Home() {
             className={view === "library" ? "nav-item active" : "nav-item"}
             onClick={() => navigate("library")}
           >
-            <FolderOpen size={18} /> Case library{" "}
-            <span className="nav-count">03</span>
+            <FolderOpen size={18} /> Case library <span className="nav-count">03</span>
           </button>
           <button
             className={view === "about" ? "nav-item active" : "nav-item"}
@@ -447,12 +418,7 @@ export default function Home() {
               title="Clear saved briefs on this device"
               aria-label="Clear saved briefs on this device"
               onClick={() => {
-                setHistory([]);
-                try {
-                  localStorage.removeItem(HISTORY_KEY);
-                } catch {
-                  setToast("Device storage is unavailable.");
-                }
+                if (!clearBriefs()) setToast("Device storage is unavailable.");
               }}
             >
               <Trash2 size={13} />
@@ -568,10 +534,7 @@ export default function Home() {
                   <h1>
                     Find the why. <span>Fix it faster.</span>
                   </h1>
-                  <p>
-                    Turn scattered logs and bug reports into your next clear
-                    step.
-                  </p>
+                  <p>Turn scattered logs and bug reports into your next clear step.</p>
                 </div>
                 <div className="heading-note">
                   <span className="note-lines">↳</span>
@@ -598,14 +561,10 @@ export default function Home() {
                 </p>
                 <button
                   onClick={() =>
-                    input.mode === "demo"
-                      ? navigate("library")
-                      : setSettings(true)
+                    input.mode === "demo" ? navigate("library") : setSettings(true)
                   }
                 >
-                  {input.mode === "demo"
-                    ? "Explore sample cases"
-                    : "Model settings"}
+                  {input.mode === "demo" ? "Explore sample cases" : "Model settings"}
                   <ArrowRight size={14} />
                 </button>
               </div>
@@ -616,9 +575,7 @@ export default function Home() {
                       <span className="step-number">01</span>
                       <h2>The context</h2>
                     </div>
-                    <span className="small-muted">
-                      Start with what you know
-                    </span>
+                    <span className="small-muted">Start with what you know</span>
                   </div>
                   <div className="report-body">
                     <div className="field-label-row">
@@ -639,14 +596,9 @@ export default function Home() {
                         }))
                       }
                     />
-                    <label
-                      className="description-label"
-                      htmlFor="report-description"
-                    >
+                    <label className="description-label" htmlFor="report-description">
                       Describe the issue{" "}
-                      <span>
-                        Expected behavior, actual behavior, and what changed
-                      </span>
+                      <span>Expected behavior, actual behavior, and what changed</span>
                     </label>
                     <textarea
                       id="report-description"
@@ -666,9 +618,7 @@ export default function Home() {
                       <span>
                         <span className="tiny-dot" /> Plain text supported
                       </span>
-                      <span>
-                        {input.description.length.toLocaleString()} / 8,000
-                      </span>
+                      <span>{input.description.length.toLocaleString()} / 8,000</span>
                     </div>
                     <div className="sources-title">
                       <label>
@@ -707,9 +657,7 @@ export default function Home() {
                                 className="source-name"
                                 onClick={() =>
                                   setExpandedSource(
-                                    expandedSource === source.id
-                                      ? null
-                                      : source.id,
+                                    expandedSource === source.id ? null : source.id,
                                   )
                                 }
                                 aria-expanded={expandedSource === source.id}
@@ -742,17 +690,13 @@ export default function Home() {
                                 aria-label={`Preview ${source.name}`}
                                 onClick={() =>
                                   setExpandedSource(
-                                    expandedSource === source.id
-                                      ? null
-                                      : source.id,
+                                    expandedSource === source.id ? null : source.id,
                                   )
                                 }
                               >
                                 <ChevronRight
                                   size={15}
-                                  className={
-                                    expandedSource === source.id ? "rotate" : ""
-                                  }
+                                  className={expandedSource === source.id ? "rotate" : ""}
                                 />
                               </button>
                             </div>
@@ -794,8 +738,7 @@ export default function Home() {
                       )}
                       {input.sources.length > 0 && (
                         <div className="drop-hint">
-                          <Upload size={12} /> Drop more logs, code, or notes
-                          here
+                          <Upload size={12} /> Drop more logs, code, or notes here
                         </div>
                       )}
                     </div>
@@ -855,9 +798,7 @@ export default function Home() {
                         ) : (
                           <Sparkles size={18} />
                         )}
-                        {busy
-                          ? "Connecting the evidence…"
-                          : "Investigate issue"}
+                        {busy ? "Connecting the evidence…" : "Investigate issue"}
                       </span>
                       {busy ? (
                         <Activity size={18} />
@@ -876,8 +817,7 @@ export default function Home() {
                       </button>
                     ) : (
                       <p className="run-caption">
-                        A clear hypothesis. A source to back it up. A way
-                        forward.
+                        A clear hypothesis. A source to back it up. A way forward.
                       </p>
                     )}
                   </div>
@@ -901,16 +841,9 @@ export default function Home() {
                             aria-label="Copy brief as Markdown"
                             onClick={() => void copyBrief()}
                           >
-                            {copied ? (
-                              <CheckCheck size={16} />
-                            ) : (
-                              <Copy size={16} />
-                            )}
+                            {copied ? <CheckCheck size={16} /> : <Copy size={16} />}
                           </button>
-                          <button
-                            className="export-button"
-                            onClick={downloadBrief}
-                          >
+                          <button className="export-button" onClick={downloadBrief}>
                             <Download size={14} /> Export
                           </button>
                         </>
@@ -948,9 +881,7 @@ export default function Home() {
                               <span className="hypothesis-number">
                                 {String(index + 1).padStart(2, "0")}
                               </span>
-                              <span
-                                className={`confidence ${hypothesis.confidence}`}
-                              >
+                              <span className={`confidence ${hypothesis.confidence}`}>
                                 <span />
                                 {hypothesis.confidence} confidence
                               </span>
@@ -958,27 +889,25 @@ export default function Home() {
                             <h4>{hypothesis.title}</h4>
                             <p>{hypothesis.explanation}</p>
                             <div className="citations">
-                              {hypothesis.citations.map(
-                                (cite, citationIndex) => (
-                                  <button
-                                    key={`${cite.sourceId}-${citationIndex}`}
-                                    onClick={() => setCitation(cite)}
-                                    title="Inspect the cited source lines"
-                                  >
-                                    <FileCode2 size={12} />
-                                    {resultSources.find(
-                                      (source) => source.id === cite.sourceId,
-                                    )?.name || cite.sourceId}
-                                    <span>
-                                      L{cite.startLine}
-                                      {cite.endLine !== cite.startLine
-                                        ? `–${cite.endLine}`
-                                        : ""}
-                                    </span>
-                                    <ArrowUpRight size={11} />
-                                  </button>
-                                ),
-                              )}
+                              {hypothesis.citations.map((cite, citationIndex) => (
+                                <button
+                                  key={`${cite.sourceId}-${citationIndex}`}
+                                  onClick={() => setCitation(cite)}
+                                  title="Inspect the cited source lines"
+                                >
+                                  <FileCode2 size={12} />
+                                  {resultSources.find(
+                                    (source) => source.id === cite.sourceId,
+                                  )?.name || cite.sourceId}
+                                  <span>
+                                    L{cite.startLine}
+                                    {cite.endLine !== cite.startLine
+                                      ? `–${cite.endLine}`
+                                      : ""}
+                                  </span>
+                                  <ArrowUpRight size={11} />
+                                </button>
+                              ))}
                             </div>
                             {hypothesis.checks.length > 0 && (
                               <details className="verification">
@@ -986,11 +915,9 @@ export default function Home() {
                                   How to verify <ChevronRight size={13} />
                                 </summary>
                                 <ul>
-                                  {hypothesis.checks.map(
-                                    (check, checkIndex) => (
-                                      <li key={checkIndex}>{check}</li>
-                                    ),
-                                  )}
+                                  {hypothesis.checks.map((check, checkIndex) => (
+                                    <li key={checkIndex}>{check}</li>
+                                  ))}
                                 </ul>
                               </details>
                             )}
@@ -1040,8 +967,8 @@ export default function Home() {
                         </span>
                       </div>
                       <p className="result-disclaimer">
-                        Hypotheses guide an investigation. Verify them before
-                        applying a fix.
+                        Hypotheses guide an investigation. Verify them before applying a
+                        fix.
                       </p>
                     </div>
                   ) : busy ? (
@@ -1061,8 +988,7 @@ export default function Home() {
                           <Check size={14} /> Context collected
                         </span>
                         <span>
-                          <Loader2 className="spin" size={14} /> Connecting the
-                          evidence
+                          <Loader2 className="spin" size={14} /> Connecting the evidence
                         </span>
                       </div>
                     </div>
@@ -1096,9 +1022,7 @@ export default function Home() {
                         <span className="orbit-dot two" />
                       </div>
                       <div className="empty-result-copy">
-                        <span className="eyebrow">
-                          CLARITY IS ONE INVESTIGATION AWAY
-                        </span>
+                        <span className="eyebrow">CLARITY IS ONE INVESTIGATION AWAY</span>
                         <h3>
                           A trail of evidence.
                           <br />A clearer way forward.
@@ -1126,9 +1050,7 @@ export default function Home() {
                         </span>
                         <div>
                           <strong>Your first case is already loaded.</strong>
-                          <p>
-                            Hit “Investigate issue” to see Traceboard in action.
-                          </p>
+                          <p>Hit “Investigate issue” to see Traceboard in action.</p>
                         </div>
                         <ArrowUpRight size={17} />
                       </div>
@@ -1138,8 +1060,8 @@ export default function Home() {
               </div>
               <div className="under-grid">
                 <span>
-                  <ShieldCheck size={13} /> Keys stay out of your history.
-                  Briefs stay on this device.
+                  <ShieldCheck size={13} /> Keys stay out of your history. Briefs stay on
+                  this device.
                 </span>
                 <span>
                   Made for the <span className="mono">“but why?”</span> moments.
@@ -1171,9 +1093,7 @@ export default function Home() {
                         )}
                       </span>
                       <div>
-                        <span className="sample-category">
-                          {sample.category}
-                        </span>
+                        <span className="sample-category">{sample.category}</span>
                         <strong>{sample.title}</strong>
                       </div>
                       {sampleId === sample.id ? (
@@ -1200,15 +1120,9 @@ export default function Home() {
                   <h1>
                     A few good <span>mysteries.</span>
                   </h1>
-                  <p>
-                    Three realistic bugs. All the context. No API key required.
-                  </p>
+                  <p>Three realistic bugs. All the context. No API key required.</p>
                 </div>
-                <FlaskConical
-                  className="page-heading-icon"
-                  size={40}
-                  strokeWidth={1.2}
-                />
+                <FlaskConical className="page-heading-icon" size={40} strokeWidth={1.2} />
               </section>
               <div className="library-grid">
                 {SAMPLE_CASES.map((sample, index) => (
@@ -1223,9 +1137,7 @@ export default function Home() {
                           <Clock3 size={24} />
                         )}
                       </span>
-                      <span className="library-number">
-                        CASE / 0{index + 1}
-                      </span>
+                      <span className="library-number">CASE / 0{index + 1}</span>
                     </div>
                     <div className="eyebrow">{sample.category}</div>
                     <h2>{sample.title}</h2>
@@ -1252,9 +1164,9 @@ export default function Home() {
                 <div>
                   <strong>A demo you can trust.</strong>
                   <p>
-                    Sample briefs are deterministic fixtures. Live analysis is
-                    clearly labeled and requires your Groq key. Changing a
-                    sample’s context requires live mode.
+                    Sample briefs are deterministic fixtures. Live analysis is clearly
+                    labeled and requires your Groq key. Changing a sample’s context
+                    requires live mode.
                   </p>
                 </div>
               </div>
@@ -1272,8 +1184,8 @@ export default function Home() {
                     From noise <span>to next steps.</span>
                   </h1>
                   <p>
-                    A small, transparent workflow for the bugs that need a
-                    second pair of eyes.
+                    A small, transparent workflow for the bugs that need a second pair of
+                    eyes.
                   </p>
                 </div>
               </section>
@@ -1285,9 +1197,8 @@ export default function Home() {
                   </div>
                   <h2>Bring the context</h2>
                   <p>
-                    Describe the unexpected behavior. Add relevant logs, code,
-                    or notes. Six focused files are more useful than an entire
-                    repository.
+                    Describe the unexpected behavior. Add relevant logs, code, or notes.
+                    Six focused files are more useful than an entire repository.
                   </p>
                 </div>
                 <ArrowRight className="workflow-arrow" size={22} />
@@ -1298,9 +1209,8 @@ export default function Home() {
                   </div>
                   <h2>Find the evidence</h2>
                   <p>
-                    Source files are split into numbered chunks. Local lexical
-                    retrieval ranks relevant passages, keeping provider requests
-                    focused.
+                    Source files are split into numbered chunks. Local lexical retrieval
+                    ranks relevant passages, keeping provider requests focused.
                   </p>
                 </div>
                 <ArrowRight className="workflow-arrow" size={22} />
@@ -1311,9 +1221,8 @@ export default function Home() {
                   </div>
                   <h2>Build a hypothesis</h2>
                   <p>
-                    Groq produces a structured brief. Citation validation checks
-                    source IDs, line ranges, and exact quotes against retrieved
-                    evidence.
+                    Groq produces a structured brief. Citation validation checks source
+                    IDs, line ranges, and exact quotes against retrieved evidence.
                   </p>
                 </div>
               </div>
@@ -1322,25 +1231,20 @@ export default function Home() {
                   <ShieldCheck size={24} />
                   <h2>Evidence you can inspect</h2>
                   <p>
-                    Click any source chip to inspect the cited lines. Valid
-                    citations establish where a finding came from; they don’t
-                    prove the hypothesis. Use the verification checks to test
-                    it.
+                    Click any source chip to inspect the cited lines. Valid citations
+                    establish where a finding came from; they don’t prove the hypothesis.
+                    Use the verification checks to test it.
                   </p>
                 </article>
                 <article className="about-card">
                   <KeyRound size={24} />
                   <h2>Your key, your session</h2>
                   <p>
-                    Use a Groq key in model settings, or configure GROQ_API_KEY
-                    on the server. Browser-entered keys live in memory and are
-                    cleared on refresh. Reports are sent to Groq only in live
-                    mode.
+                    Use a Groq key in model settings, or configure GROQ_API_KEY on the
+                    server. Browser-entered keys live in memory and are cleared on
+                    refresh. Reports are sent to Groq only in live mode.
                   </p>
-                  <button
-                    className="text-link"
-                    onClick={() => setSettings(true)}
-                  >
+                  <button className="text-link" onClick={() => setSettings(true)}>
                     Connect Groq <ArrowUpRight size={14} />
                   </button>
                 </article>
@@ -1348,18 +1252,18 @@ export default function Home() {
                   <Download size={24} />
                   <h2>Take the brief with you</h2>
                   <p>
-                    Copy or export a Markdown brief to attach to an issue or
-                    share in a pull request. Recent briefs are saved in your
-                    browser and can be cleared from the sidebar.
+                    Copy or export a Markdown brief to attach to an issue or share in a
+                    pull request. Recent briefs are saved in your browser and can be
+                    cleared from the sidebar.
                   </p>
                 </article>
                 <article className="about-card">
                   <FlaskConical size={24} />
                   <h2>Useful without an API key</h2>
                   <p>
-                    Explore three complete, deterministic samples. Custom
-                    reports need a model connection. Provider errors stay
-                    visible so you always know whether an AI call succeeded.
+                    Explore three complete, deterministic samples. Custom reports need a
+                    model connection. Provider errors stay visible so you always know
+                    whether an AI call succeeded.
                   </p>
                   <a
                     className="text-link"
@@ -1419,8 +1323,8 @@ export default function Home() {
         <div className="eyebrow">A LITTLE MORE INTELLIGENCE</div>
         <h2 id="settings-title">Connect your model.</h2>
         <p className="dialog-description">
-          Bring a Groq key to investigate your own reports. The sample cases are
-          always available without one.
+          Bring a Groq key to investigate your own reports. The sample cases are always
+          available without one.
         </p>
         <div className={`server-status ${configured ? "ready" : ""}`}>
           <span className="status-dot" />
@@ -1434,11 +1338,7 @@ export default function Home() {
         </div>
         <label className="settings-label" htmlFor="api-key">
           Groq API key{" "}
-          <a
-            href="https://console.groq.com/keys"
-            target="_blank"
-            rel="noreferrer"
-          >
+          <a href="https://console.groq.com/keys" target="_blank" rel="noreferrer">
             Get a key <ArrowUpRight size={12} />
           </a>
         </label>
@@ -1476,13 +1376,8 @@ export default function Home() {
           <option value="llama-3.3-70b-versatile" />
         </datalist>
         <p className="field-hint">
-          Default: GPT-OSS 20B. Availability and free limits depend on your Groq
-          account.{" "}
-          <a
-            href="https://console.groq.com/docs/models"
-            target="_blank"
-            rel="noreferrer"
-          >
+          Default: GPT-OSS 20B. Availability and free limits depend on your Groq account.{" "}
+          <a href="https://console.groq.com/docs/models" target="_blank" rel="noreferrer">
             View models ↗
           </a>
         </p>
@@ -1506,9 +1401,7 @@ export default function Home() {
               updateInput((previous) => ({ ...previous, mode: "groq" }));
               setModel(model.trim());
               setSettings(false);
-              setToast(
-                "Groq mode enabled. Run an investigation to test the connection.",
-              );
+              setToast("Groq mode enabled. Run an investigation to test the connection.");
             }}
           >
             Use Groq <ArrowRight size={15} />
@@ -1527,9 +1420,7 @@ export default function Home() {
         <div className="dialog-heading">
           <div>
             <div className="eyebrow">FOLLOW THE SOURCE</div>
-            <h2 id="evidence-title">
-              {evidenceSource?.name || "Source evidence"}
-            </h2>
+            <h2 id="evidence-title">{evidenceSource?.name || "Source evidence"}</h2>
           </div>
           <button
             className="icon-button"
@@ -1540,8 +1431,8 @@ export default function Home() {
           </button>
         </div>
         <p className="evidence-caption">
-          Highlighted lines were cited in this brief. Read the surrounding
-          context to verify the finding.
+          Highlighted lines were cited in this brief. Read the surrounding context to
+          verify the finding.
         </p>
         <div className="source-viewer">
           {evidenceSource?.content.split("\n").map((line, index) => (

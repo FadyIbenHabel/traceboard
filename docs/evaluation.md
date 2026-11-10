@@ -44,3 +44,13 @@ Create a versioned set of incidents with expected relevant files and line ranges
 Have a human reviewer label whether each hypothesis is supported and whether each check is actionable. Save the model, prompt version, retrieval settings, and raw structured results with credentials removed. Publish the denominator and failure cases alongside any aggregate score.
 
 This repository does not claim a diagnostic accuracy percentage, production readiness, or a completed live-model benchmark. Without a real key, only the offline application contracts can be verified.
+
+## Repository checks
+
+`npm run check` also runs lint, type checking, and `npm run repo:check`.
+`tests/repository.test.ts` invokes Git's own ignore matcher against representative
+secret paths, caches, archives, runtime output, and source files that must remain
+publishable. This catches accidental broad ignore rules as well as missing ones.
+`npm run repo:check -- --history` additionally scans committed history for the
+credential shapes recognized by the checker; it does not certify the absence of
+all possible secrets.

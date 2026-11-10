@@ -32,10 +32,7 @@ export function tokenize(text: string): string[] {
 }
 
 /** Bounded, dependency-free BM25 retrieval. Line numbers refer to original files. */
-export function retrieveEvidence(
-  input: AnalysisInput,
-  limit = 8,
-): EvidenceChunk[] {
+export function retrieveEvidence(input: AnalysisInput, limit = 8): EvidenceChunk[] {
   const chunks: EvidenceChunk[] = [];
   for (const source of input.sources) {
     const lines = source.content.replace(/\r\n/g, "\n").split("\n");
@@ -60,20 +57,14 @@ export function retrieveEvidence(
     tokenize(`${chunk.sourceName} ${chunk.content}`),
   );
   const averageLength =
-    documents.reduce((sum, tokens) => sum + tokens.length, 0) /
-      documents.length || 1;
+    documents.reduce((sum, tokens) => sum + tokens.length, 0) / documents.length || 1;
   const terms = [...new Set(tokenize(`${input.title} ${input.description}`))];
   for (const term of terms) {
-    const frequency = documents.filter((tokens) =>
-      tokens.includes(term),
-    ).length;
-    const idf = Math.log(
-      1 + (documents.length - frequency + 0.5) / (frequency + 0.5),
-    );
+    const frequency = documents.filter((tokens) => tokens.includes(term)).length;
+    const idf = Math.log(1 + (documents.length - frequency + 0.5) / (frequency + 0.5));
     documents.forEach((tokens, index) => {
       const tf = tokens.filter((token) => token === term).length;
-      const denominator =
-        tf + 1.2 * (1 - 0.75 + (0.75 * tokens.length) / averageLength);
+      const denominator = tf + 1.2 * (1 - 0.75 + (0.75 * tokens.length) / averageLength);
       if (tf) chunks[index].score += (idf * tf * 2.2) / denominator;
     });
   }
